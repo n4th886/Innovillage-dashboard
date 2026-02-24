@@ -36,6 +36,9 @@
     });
 
     client.on("message", (topic, message) => {
+      console.log("RAW:", message.toString());
+      const data = JSON.parse(message.toString());
+      console.log("PARSED:", data);
       const data = JSON.parse(message.toString());
 
       document.getElementById("temp").textContent = data.temperature ?? "-";
