@@ -30,9 +30,19 @@
       clean: true
     });
 
-    client.on("connect", () => {
-      console.log("Connected!");
-      client.subscribe(TOPIC);
+      client.on("connect", () => {
+  console.log("Connected!");
+
+  client.subscribe(TOPIC, (err, granted) => {
+    if (err) console.error("SUBSCRIBE ERROR:", err);
+    else console.log("SUBSCRIBED:", granted);
+  });
+
+
+client.on("message", (topic, message) => {
+  console.log("MESSAGE IN:", topic);
+  console.log("RAW:", message.toString());
+});
     });
 
     client.on("message", (topic, message) => {
