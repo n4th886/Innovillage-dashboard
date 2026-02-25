@@ -1,245 +1,257 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Innovillage – Reactor Dashboard</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Innovillage — Reactor Dashboard</title>
   <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
   <header class="topbar">
-    <div>
-      <div class="title">Innovillage Reactor Dashboard</div>
-      <div class="subtitle">Realtime Monitoring • Device: <span id="deviceIdLabel">device01</span></div>
+    <div class="brand">
+      <div class="logo">IV</div>
+      <div>
+        <div class="title">Innovillage Dashboard</div>
+        <div class="subtitle">Coffee Waste Management System — Reactor Monitoring</div>
+      </div>
     </div>
 
-    <div class="devicePicker">
-      <label for="deviceSelect">Device</label>
-      <select id="deviceSelect">
-        <option value="device01" selected>device01</option>
-        <!-- kalau ada device lain, tinggal tambah option -->
-        <!-- <option value="device02">device02</option> -->
-      </select>
+    <div class="controls">
+      <div class="control">
+        <label for="deviceSelect">Device</label>
+        <select id="deviceSelect">
+          <option value="device01" selected>device01</option>
+          <option value="device02">device02</option>
+        </select>
+      </div>
+
+      <div class="control">
+        <label for="reactorName">Reactor Name</label>
+        <input id="reactorName" type="text" value="RKT-001" placeholder="e.g. RKT-001" />
+      </div>
     </div>
   </header>
 
   <main class="container">
-    <section class="cards">
-      <div class="card">
-        <div class="cardLabel">Temperature</div>
-        <div class="cardValue"><span id="tempVal">-</span><span class="unit">°C</span></div>
-        <div class="cardHint" id="tempHint">waiting…</div>
+    <section class="hero">
+      <div class="hero-left">
+        <h1 id="reactorTitle">Reactor: RKT-001</h1>
+        <p class="muted">
+          Realtime from Firebase RTDB:
+          <span class="mono" id="dbPath">/devices/device01/latest</span>
+        </p>
       </div>
 
-      <div class="card">
-        <div class="cardLabel">Pressure</div>
-        <div class="cardValue"><span id="pressVal">-</span><span class="unit">kPa</span></div>
-        <div class="cardHint" id="pressHint">waiting…</div>
-      </div>
-
-      <div class="card">
-        <div class="cardLabel">Methane</div>
-        <div class="cardValue"><span id="methVal">-</span><span class="unit">V</span></div>
-        <div class="cardHint" id="methHint">waiting…</div>
-      </div>
-
-      <div class="card">
-        <div class="cardLabel">pH</div>
-        <div class="cardValue"><span id="phVal">-</span><span class="unit">V</span></div>
-        <div class="cardHint" id="phHint">waiting…</div>
+      <div class="hero-right">
+        <div id="statusCard" class="status-card st-unknown">
+          <div class="status-top">
+            <span class="dot"></span>
+            <span class="status-label" id="statusLabel">UNKNOWN</span>
+          </div>
+          <div class="status-desc" id="statusDesc">Waiting for data…</div>
+          <div class="status-meta">
+            <span class="muted">Last update:</span>
+            <span class="mono" id="lastUpdate">-</span>
+          </div>
+        </div>
       </div>
     </section>
 
-    <section class="statusRow">
-      <div class="statusCard">
-        <div class="statusTitle">Reactor Status</div>
-        <div class="statusBadge" id="statusBadge">CONNECTING…</div>
-        <div class="statusDesc" id="statusDesc">Waiting data from Firebase…</div>
+    <section class="grid">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">Temperature</div>
+          <div class="badge">DS18B20</div>
+        </div>
+        <div class="card-value">
+          <span id="temp">-</span><span class="unit">°C</span>
+        </div>
+        <div class="card-foot muted">Ideal range depends on process stage.</div>
       </div>
 
-      <div class="metaCard">
-        <div class="metaTitle">Last Update</div>
-        <div class="metaValue" id="lastUpdate">-</div>
-        <div class="metaSub">Epoch: <span id="epochVal">-</span></div>
-
-        <div class="divider"></div>
-
-        <div class="metaTitle">Connection</div>
-        <div class="metaValue" id="connState">-</div>
-        <div class="metaSub" id="connHint">-</div>
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">Pressure</div>
+          <div class="badge">MPX</div>
+        </div>
+        <div class="card-value">
+          <span id="press">-</span><span class="unit">kPa</span>
+        </div>
+        <div class="card-foot muted">Used for reactor safety status.</div>
       </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">Methane</div>
+          <div class="badge">MQ</div>
+        </div>
+        <div class="card-value">
+          <span id="meth">-</span><span class="unit">V</span>
+        </div>
+        <div class="card-foot muted">Raw voltage (calibration later).</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">pH</div>
+          <div class="badge">Probe</div>
+        </div>
+        <div class="card-value">
+          <span id="ph">-</span><span class="unit">V</span>
+        </div>
+        <div class="card-foot muted">Raw voltage (calibration later).</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Raw Payload</h2>
+        <div class="hint muted">Shows exactly what RTDB returns (for debugging)</div>
+      </div>
+
+      <pre id="rawJson" class="jsonbox">{}</pre>
     </section>
   </main>
 
   <footer class="footer">
-    <span>© Innovillage • Realtime Database</span>
+    <span class="muted">Hosted on GitHub Pages • Realtime via Firebase RTDB</span>
   </footer>
 
-  <!-- Firebase SDK (Modular v9) -->
+  <!-- Firebase (v9 modular via CDN) -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-    import { getDatabase, ref, onValue, onDisconnect, set, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+    import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
     // =========================
-    // 1) ISI config Firebase kamu
-    // Firebase Console -> Project settings -> Your apps (Web) -> firebaseConfig
+    // 1) GANTI firebaseConfig kamu di sini (WAJIB)
+    // Firebase Console -> Project settings -> Your apps -> Web app -> firebaseConfig
     // =========================
     const firebaseConfig = {
       apiKey: "ISI_API_KEY",
       authDomain: "innovillage-7fd90.firebaseapp.com",
       databaseURL: "https://innovillage-7fd90-default-rtdb.asia-southeast1.firebasedatabase.app",
       projectId: "innovillage-7fd90",
-      storageBucket: "innovillage-7fd90.firebasestorage.app",
-      messagingSenderId: "155228200711",
-      appId: "1:155228200711:web:5cfb5711f317a501d4efa2"
+      storageBucket: "innovillage-7fd90.appspot.com",
+      messagingSenderId: "ISI_SENDER_ID",
+      appId: "ISI_APP_ID"
     };
 
     // =========================
-    // 2) Init
+    // UI Elements
+    // =========================
+    const deviceSelect = document.getElementById("deviceSelect");
+    const reactorName = document.getElementById("reactorName");
+    const reactorTitle = document.getElementById("reactorTitle");
+    const dbPathEl = document.getElementById("dbPath");
+
+    const tempEl = document.getElementById("temp");
+    const pressEl = document.getElementById("press");
+    const methEl = document.getElementById("meth");
+    const phEl = document.getElementById("ph");
+    const rawJsonEl = document.getElementById("rawJson");
+
+    const statusCard = document.getElementById("statusCard");
+    const statusLabel = document.getElementById("statusLabel");
+    const statusDesc = document.getElementById("statusDesc");
+    const lastUpdateEl = document.getElementById("lastUpdate");
+
+    // =========================
+    // 2) Status rules (edit if needed)
+    // Default: pressure only
+    // SAFE <= 200
+    // WARNING 200..400
+    // DANGER > 400
+    // =========================
+    function computeStatus(data) {
+      const p = Number(data?.pressure);
+      if (Number.isNaN(p) || !Number.isFinite(p)) {
+        return { level: "UNKNOWN", cls: "st-unknown", desc: "Pressure invalid / no data yet." };
+      }
+      if (p > 400) return { level: "DANGER", cls: "st-danger", desc: "Pressure above danger threshold." };
+      if (p > 200) return { level: "WARNING", cls: "st-warning", desc: "Pressure above warning threshold." };
+      return { level: "SAFE", cls: "st-safe", desc: "System looks stable." };
+    }
+
+    function fmt(num, digits = 2) {
+      if (num === null || num === undefined) return "-";
+      const n = Number(num);
+      if (!Number.isFinite(n)) return "-";
+      return n.toFixed(digits);
+    }
+
+    function setStatus(st) {
+      statusCard.classList.remove("st-safe", "st-warning", "st-danger", "st-unknown");
+      statusCard.classList.add(st.cls);
+      statusLabel.textContent = st.level;
+      statusDesc.textContent = st.desc;
+    }
+
+    function updateUI(data) {
+      // render numbers
+      tempEl.textContent  = (data?.temperature === null || data?.temperature === undefined) ? "-" : fmt(data.temperature, 2);
+      pressEl.textContent = fmt(data?.pressure, 2);
+      methEl.textContent  = fmt(data?.methane, 3);
+      phEl.textContent    = fmt(data?.ph, 3);
+
+      // raw json
+      rawJsonEl.textContent = JSON.stringify(data ?? {}, null, 2);
+
+      // status
+      const st = computeStatus(data ?? {});
+      setStatus(st);
+
+      // last update
+      const epoch = Number(data?.epoch);
+      if (Number.isFinite(epoch) && epoch > 0) {
+        const d = new Date(epoch * 1000);
+        lastUpdateEl.textContent = d.toLocaleString();
+      } else {
+        lastUpdateEl.textContent = "-";
+      }
+    }
+
+    // =========================
+    // Firebase init
     // =========================
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    // UI elements
-    const el = (id) => document.getElementById(id);
-
-    const deviceSelect = el("deviceSelect");
-    const deviceIdLabel = el("deviceIdLabel");
-
-    const tempVal = el("tempVal");
-    const pressVal = el("pressVal");
-    const methVal = el("methVal");
-    const phVal = el("phVal");
-    const epochVal = el("epochVal");
-    const lastUpdate = el("lastUpdate");
-    const connState = el("connState");
-    const connHint = el("connHint");
-
-    const statusBadge = el("statusBadge");
-    const statusDesc = el("statusDesc");
-
-    // =========================
-    // 3) Helpers
-    // =========================
-    const fmt = (v, digits = 2) => {
-      if (v === null || v === undefined) return "-";
-      if (typeof v !== "number") {
-        const n = Number(v);
-        if (Number.isNaN(n)) return "-";
-        v = n;
-      }
-      return v.toFixed(digits);
-    };
-
-    const epochToLocal = (epoch) => {
-      if (!epoch) return "-";
-      const n = Number(epoch);
-      if (Number.isNaN(n)) return "-";
-      const d = new Date(n * 1000);
-      return d.toLocaleString();
-    };
-
-    // Status thresholds (kamu bisa ubah)
-    // Default: berdasarkan pressure (kPa)
-    // - Safe: 0..200
-    // - Warning: 200..400
-    // - Danger: >400
-    // Jika pressure invalid (<0) -> UNKNOWN
-    const getStatus = (data) => {
-      const p = Number(data?.pressure);
-      if (Number.isNaN(p) || p < 0) {
-        return { level: "UNKNOWN", cls: "st-unknown", desc: "Pressure invalid / sensor not ready." };
-      }
-      if (p > 400) return { level: "DANGER", cls: "st-danger", desc: "Pressure is above danger threshold." };
-      if (p > 200) return { level: "WARNING", cls: "st-warning", desc: "Pressure is above warning threshold." };
-      return { level: "SAFE", cls: "st-safe", desc: "System looks stable." };
-    };
-
-    const setStatusUI = (s) => {
-      statusBadge.className = "statusBadge " + s.cls;
-      statusBadge.textContent = s.level;
-      statusDesc.textContent = s.desc;
-    };
-
-    // =========================
-    // 4) Presence (optional)
-    // Track dashboard online state (helps debug realtime)
-    // =========================
-    const setPresence = async () => {
-      try {
-        const presenceRef = ref(db, "dashboards/web/latest");
-        await set(presenceRef, { online: true, at: Date.now() });
-        // onDisconnect() can be used but needs auth sometimes;
-        connState.textContent = "CONNECTED";
-        connHint.textContent = "Firebase initialized.";
-      } catch (e) {
-        connState.textContent = "LIMITED";
-        connHint.textContent = "Presence write blocked by rules (still can read).";
-      }
-    };
-
-    // =========================
-    // 5) Subscribe to device path
-    // =========================
     let unsubscribe = null;
 
-    const subscribe = (deviceId) => {
-      deviceIdLabel.textContent = deviceId;
-
+    function listen() {
+      const deviceId = deviceSelect.value;
       const path = `/devices/${deviceId}/latest`;
+
+      dbPathEl.textContent = path;
+
+      // reset
+      updateUI(null);
+      setStatus({ level: "UNKNOWN", cls: "st-unknown", desc: "Waiting for data…" });
+
+      // attach listener
       const r = ref(db, path);
-
-      // reset UI
-      tempVal.textContent = "-";
-      pressVal.textContent = "-";
-      methVal.textContent = "-";
-      phVal.textContent = "-";
-      epochVal.textContent = "-";
-      lastUpdate.textContent = "-";
-      setStatusUI({ level: "CONNECTING…", cls: "st-unknown", desc: "Waiting data from Firebase…" });
-
-      // Listen realtime
-      if (unsubscribe) unsubscribe(); // for future if you implement manual detach
       onValue(r, (snap) => {
-        const data = snap.val();
-
-        if (!data) {
-          connState.textContent = "CONNECTED";
-          connHint.textContent = "No data at path: " + path;
-          setStatusUI({ level: "NO DATA", cls: "st-unknown", desc: "No JSON found. Check ESP32 writer / rules." });
-          return;
-        }
-
-        // Fill UI
-        tempVal.textContent = fmt(data.temperature, 2);
-        pressVal.textContent = fmt(data.pressure, 2);
-        methVal.textContent = fmt(data.methane, 3);
-        phVal.textContent = fmt(data.ph, 3);
-
-        epochVal.textContent = data.epoch ?? "-";
-        lastUpdate.textContent = epochToLocal(data.epoch);
-
-        // Status
-        const s = getStatus(data);
-        setStatusUI(s);
-
-        // Connection hint
-        connState.textContent = "CONNECTED";
-        connHint.textContent = "Listening: " + path;
+        const val = snap.val();
+        updateUI(val);
       }, (err) => {
-        connState.textContent = "ERROR";
-        connHint.textContent = err?.message || "Failed to read from RTDB.";
-        setStatusUI({ level: "ERROR", cls: "st-danger", desc: "RTDB read error. Check rules / config." });
+        rawJsonEl.textContent = JSON.stringify({ error: err?.message ?? String(err) }, null, 2);
+        setStatus({ level: "UNKNOWN", cls: "st-unknown", desc: "Firebase read error. Check rules/config." });
       });
-    };
+    }
 
-    deviceSelect.addEventListener("change", () => {
-      subscribe(deviceSelect.value);
+    // UI events
+    reactorName.addEventListener("input", () => {
+      const name = reactorName.value?.trim() || "RKT-001";
+      reactorTitle.textContent = `Reactor: ${name}`;
     });
 
-    // Run
-    setPresence();
-    subscribe(deviceSelect.value);
+    deviceSelect.addEventListener("change", () => {
+      listen();
+    });
+
+    // start
+    listen();
   </script>
 </body>
 </html>
