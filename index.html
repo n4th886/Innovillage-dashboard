@@ -21,8 +21,8 @@
       <div class="control">
         <label for="deviceSelect">Device</label>
         <select id="deviceSelect">
-          <option value="device01" selected>device01</option>
-          <option value="device02">device02</option>
+          <option value="device01" selected>Device01</option>
+          <option value="device02">Device02</option>
         </select>
       </div>
 
@@ -221,7 +221,7 @@
 
     function listen() {
       const deviceId = deviceSelect.value;
-      const path = `/devices/${deviceId}/latest`;
+      const path = `${deviceId}/latest`;
 
       dbPathEl.textContent = path;
 
