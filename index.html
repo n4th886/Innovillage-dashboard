@@ -1,72 +1,245 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Innovillage Dashboard</title>
-  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Innovillage – Reactor Dashboard</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <h2>Reactor: RKT-001</h2>
+  <header class="topbar">
+    <div>
+      <div class="title">Innovillage Reactor Dashboard</div>
+      <div class="subtitle">Realtime Monitoring • Device: <span id="deviceIdLabel">device01</span></div>
+    </div>
 
-  <p>Temperature: <span id="temp">-</span></p>
-  <p>Pressure: <span id="press">-</span></p>
-  <p>Methane: <span id="meth">-</span></p>
-  <p>pH: <span id="ph">-</span></p>
+    <div class="devicePicker">
+      <label for="deviceSelect">Device</label>
+      <select id="deviceSelect">
+        <option value="device01" selected>device01</option>
+        <!-- kalau ada device lain, tinggal tambah option -->
+        <!-- <option value="device02">device02</option> -->
+      </select>
+    </div>
+  </header>
 
+  <main class="container">
+    <section class="cards">
+      <div class="card">
+        <div class="cardLabel">Temperature</div>
+        <div class="cardValue"><span id="tempVal">-</span><span class="unit">°C</span></div>
+        <div class="cardHint" id="tempHint">waiting…</div>
+      </div>
 
-<script>
-  // ===== GANTI INI =====
-  const HOST = "ca75ef857bdb4fd2a5fad02da7922d4e.s1.eu.hivemq.cloud";
-  const USER = "USER1";
-  const PASS = "girimekarRKT-001";
-  const TOPIC = "innovillage/reactors/RKT-001/current";
-  // ======================
+      <div class="card">
+        <div class="cardLabel">Pressure</div>
+        <div class="cardValue"><span id="pressVal">-</span><span class="unit">kPa</span></div>
+        <div class="cardHint" id="pressHint">waiting…</div>
+      </div>
 
-  // HiveMQ WebSocket Secure port
-  const url = `wss://${HOST}:8884/mqtt`;
+      <div class="card">
+        <div class="cardLabel">Methane</div>
+        <div class="cardValue"><span id="methVal">-</span><span class="unit">V</span></div>
+        <div class="cardHint" id="methHint">waiting…</div>
+      </div>
 
-  const client = mqtt.connect(url, {
-    username: USER,
-    password: PASS,
-    clean: true,
-    // penting: biar nggak bentrok dengan MQTTX / device lain
-    clientId: "web_" + Math.random().toString(16).slice(2),
-  });
+      <div class="card">
+        <div class="cardLabel">pH</div>
+        <div class="cardValue"><span id="phVal">-</span><span class="unit">V</span></div>
+        <div class="cardHint" id="phHint">waiting…</div>
+      </div>
+    </section>
 
-  client.on("connect", () => {
-    console.log("Connected!");
+    <section class="statusRow">
+      <div class="statusCard">
+        <div class="statusTitle">Reactor Status</div>
+        <div class="statusBadge" id="statusBadge">CONNECTING…</div>
+        <div class="statusDesc" id="statusDesc">Waiting data from Firebase…</div>
+      </div>
 
-    client.subscribe(TOPIC, (err, granted) => {
-      if (err) console.error("SUBSCRIBE ERROR:", err);
-      else console.log("SUBSCRIBED:", granted);
+      <div class="metaCard">
+        <div class="metaTitle">Last Update</div>
+        <div class="metaValue" id="lastUpdate">-</div>
+        <div class="metaSub">Epoch: <span id="epochVal">-</span></div>
+
+        <div class="divider"></div>
+
+        <div class="metaTitle">Connection</div>
+        <div class="metaValue" id="connState">-</div>
+        <div class="metaSub" id="connHint">-</div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>© Innovillage • Realtime Database</span>
+  </footer>
+
+  <!-- Firebase SDK (Modular v9) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+    import { getDatabase, ref, onValue, onDisconnect, set, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+    // =========================
+    // 1) ISI config Firebase kamu
+    // Firebase Console -> Project settings -> Your apps (Web) -> firebaseConfig
+    // =========================
+    const firebaseConfig = {
+      apiKey: "ISI_API_KEY",
+      authDomain: "innovillage-7fd90.firebaseapp.com",
+      databaseURL: "https://innovillage-7fd90-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "innovillage-7fd90",
+      storageBucket: "innovillage-7fd90.firebasestorage.app",
+      messagingSenderId: "155228200711",
+      appId: "1:155228200711:web:5cfb5711f317a501d4efa2"
+    };
+
+    // =========================
+    // 2) Init
+    // =========================
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    // UI elements
+    const el = (id) => document.getElementById(id);
+
+    const deviceSelect = el("deviceSelect");
+    const deviceIdLabel = el("deviceIdLabel");
+
+    const tempVal = el("tempVal");
+    const pressVal = el("pressVal");
+    const methVal = el("methVal");
+    const phVal = el("phVal");
+    const epochVal = el("epochVal");
+    const lastUpdate = el("lastUpdate");
+    const connState = el("connState");
+    const connHint = el("connHint");
+
+    const statusBadge = el("statusBadge");
+    const statusDesc = el("statusDesc");
+
+    // =========================
+    // 3) Helpers
+    // =========================
+    const fmt = (v, digits = 2) => {
+      if (v === null || v === undefined) return "-";
+      if (typeof v !== "number") {
+        const n = Number(v);
+        if (Number.isNaN(n)) return "-";
+        v = n;
+      }
+      return v.toFixed(digits);
+    };
+
+    const epochToLocal = (epoch) => {
+      if (!epoch) return "-";
+      const n = Number(epoch);
+      if (Number.isNaN(n)) return "-";
+      const d = new Date(n * 1000);
+      return d.toLocaleString();
+    };
+
+    // Status thresholds (kamu bisa ubah)
+    // Default: berdasarkan pressure (kPa)
+    // - Safe: 0..200
+    // - Warning: 200..400
+    // - Danger: >400
+    // Jika pressure invalid (<0) -> UNKNOWN
+    const getStatus = (data) => {
+      const p = Number(data?.pressure);
+      if (Number.isNaN(p) || p < 0) {
+        return { level: "UNKNOWN", cls: "st-unknown", desc: "Pressure invalid / sensor not ready." };
+      }
+      if (p > 400) return { level: "DANGER", cls: "st-danger", desc: "Pressure is above danger threshold." };
+      if (p > 200) return { level: "WARNING", cls: "st-warning", desc: "Pressure is above warning threshold." };
+      return { level: "SAFE", cls: "st-safe", desc: "System looks stable." };
+    };
+
+    const setStatusUI = (s) => {
+      statusBadge.className = "statusBadge " + s.cls;
+      statusBadge.textContent = s.level;
+      statusDesc.textContent = s.desc;
+    };
+
+    // =========================
+    // 4) Presence (optional)
+    // Track dashboard online state (helps debug realtime)
+    // =========================
+    const setPresence = async () => {
+      try {
+        const presenceRef = ref(db, "dashboards/web/latest");
+        await set(presenceRef, { online: true, at: Date.now() });
+        // onDisconnect() can be used but needs auth sometimes;
+        connState.textContent = "CONNECTED";
+        connHint.textContent = "Firebase initialized.";
+      } catch (e) {
+        connState.textContent = "LIMITED";
+        connHint.textContent = "Presence write blocked by rules (still can read).";
+      }
+    };
+
+    // =========================
+    // 5) Subscribe to device path
+    // =========================
+    let unsubscribe = null;
+
+    const subscribe = (deviceId) => {
+      deviceIdLabel.textContent = deviceId;
+
+      const path = `/devices/${deviceId}/latest`;
+      const r = ref(db, path);
+
+      // reset UI
+      tempVal.textContent = "-";
+      pressVal.textContent = "-";
+      methVal.textContent = "-";
+      phVal.textContent = "-";
+      epochVal.textContent = "-";
+      lastUpdate.textContent = "-";
+      setStatusUI({ level: "CONNECTING…", cls: "st-unknown", desc: "Waiting data from Firebase…" });
+
+      // Listen realtime
+      if (unsubscribe) unsubscribe(); // for future if you implement manual detach
+      onValue(r, (snap) => {
+        const data = snap.val();
+
+        if (!data) {
+          connState.textContent = "CONNECTED";
+          connHint.textContent = "No data at path: " + path;
+          setStatusUI({ level: "NO DATA", cls: "st-unknown", desc: "No JSON found. Check ESP32 writer / rules." });
+          return;
+        }
+
+        // Fill UI
+        tempVal.textContent = fmt(data.temperature, 2);
+        pressVal.textContent = fmt(data.pressure, 2);
+        methVal.textContent = fmt(data.methane, 3);
+        phVal.textContent = fmt(data.ph, 3);
+
+        epochVal.textContent = data.epoch ?? "-";
+        lastUpdate.textContent = epochToLocal(data.epoch);
+
+        // Status
+        const s = getStatus(data);
+        setStatusUI(s);
+
+        // Connection hint
+        connState.textContent = "CONNECTED";
+        connHint.textContent = "Listening: " + path;
+      }, (err) => {
+        connState.textContent = "ERROR";
+        connHint.textContent = err?.message || "Failed to read from RTDB.";
+        setStatusUI({ level: "ERROR", cls: "st-danger", desc: "RTDB read error. Check rules / config." });
+      });
+    };
+
+    deviceSelect.addEventListener("change", () => {
+      subscribe(deviceSelect.value);
     });
-  });
 
-  client.on("error", (err) => {
-    console.error("MQTT ERROR:", err);
-  });
-
-  client.on("close", () => {
-    console.log("MQTT CLOSED");
-  });
-
-  client.on("message", (topic, message) => {
-    const raw = message.toString();
-    console.log("MESSAGE IN:", topic);
-    console.log("RAW:", raw);
-
-    try {
-      const data = JSON.parse(raw);
-
-      document.getElementById("temp").textContent = data.temperature ?? "-";
-      document.getElementById("press").textContent = data.pressure ?? "-";
-      document.getElementById("meth").textContent = data.methane ?? "-";
-      document.getElementById("ph").textContent = data.ph ?? "-";
-    } catch (e) {
-      console.error("JSON PARSE FAILED:", e);
-    }
-  });
-</script>
+    // Run
+    setPresence();
+    subscribe(deviceSelect.value);
+  </script>
 </body>
 </html>
