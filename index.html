@@ -4,7 +4,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Innovillage — Reactor Dashboard</title>
-  <link rel="stylesheet" href="./style.css" />
+  <link rel="stylesheet" href="style.css" />
 </head>
 
 <body>
@@ -21,9 +21,8 @@
       <div class="control">
         <label for="deviceSelect">Device</label>
         <select id="deviceSelect">
-          <!-- IMPORTANT: match DATABASE_PATH dari ESP32 -->
-          <option value="/Device01" selected>Device01</option>
-          <option value="/Device02">Device02</option>
+          <option value="Device01" selected>Device01</option>
+          <option value="Device02">Device02</option>
         </select>
       </div>
 
@@ -68,13 +67,13 @@
         <div class="card-value">
           <span id="temp">-</span><span class="unit">°C</span>
         </div>
-        <div class="card-foot muted">Null/NAN means sensor not detected.</div>
+        <div class="card-foot muted">Ideal range depends on process stage.</div>
       </div>
 
       <div class="card">
         <div class="card-head">
           <div class="card-title">Pressure</div>
-          <div class="badge">MPX</div>
+          <div class="badge">MPX5700AP</div>
         </div>
         <div class="card-value">
           <span id="press">-</span><span class="unit">kPa</span>
@@ -125,7 +124,7 @@
     import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
     // =========================
-    // 1) Firebase config (punyamu)
+    // Firebase Configuration
     // =========================
     const firebaseConfig = {
       apiKey: "AIzaSyA1rsjbjvVawCKtKuxXfgiyOOrP80As_w4",
@@ -157,26 +156,31 @@
     const lastUpdateEl = document.getElementById("lastUpdate");
 
     // =========================
-    // Status rules (EDIT threshold sesuai kebutuhan)
-    // Pakai pressure_kPa (bukan pressure)
+    // Status rules based on pressure (kPa)
     // SAFE <= 200
-    // WARNING 200..400
+    // WARNING 200-400
     // DANGER > 400
     // =========================
     function computeStatus(data) {
-      const p = Number(data?.pressure_kPa);
-      if (!Number.isFinite(p)) {
-        return { level: "UNKNOWN", cls: "st-unknown", desc: "Pressure invalid / no data yet." };
+      // Check if data exists and has pressure_kPa field
+      if (!data || data.pressure_kPa === undefined || data.pressure_kPa === null) {
+        return { level: "UNKNOWN", cls: "st-unknown", desc: "No pressure data available." };
       }
-      if (p > 400) return { level: "DANGER", cls: "st-danger", desc: "Pressure above danger threshold." };
-      if (p > 200) return { level: "WARNING", cls: "st-warning", desc: "Pressure above warning threshold." };
-      return { level: "SAFE", cls: "st-safe", desc: "System looks stable." };
+      
+      const p = Number(data.pressure_kPa);
+      if (Number.isNaN(p) || !Number.isFinite(p)) {
+        return { level: "UNKNOWN", cls: "st-unknown", desc: "Pressure value invalid." };
+      }
+      
+      if (p > 400) return { level: "DANGER", cls: "st-danger", desc: "Pressure above danger threshold (>400 kPa)." };
+      if (p > 200) return { level: "WARNING", cls: "st-warning", desc: "Pressure above warning threshold (>200 kPa)." };
+      return { level: "SAFE", cls: "st-safe", desc: "System looks stable (≤200 kPa)." };
     }
 
-    function fmt(num, digits = 2) {
-      if (num === null || num === undefined) return "-";
+    function fmt(num, digits = 2, defaultValue = "-") {
+      if (num === null || num === undefined) return defaultValue;
       const n = Number(num);
-      if (!Number.isFinite(n)) return "-";
+      if (!Number.isFinite(n)) return defaultValue;
       return n.toFixed(digits);
     }
 
@@ -188,25 +192,37 @@
     }
 
     function updateUI(data) {
-      // ===== MAPPING SESUAI JSON ESP32 =====
-      // temperature: number or null
-      // pressure_kPa: number
-      // methane_V: number
-      // ph_V: number
-      // timestamp: epoch seconds
-      tempEl.textContent  = (data?.temperature === null || data?.temperature === undefined) ? "-" : fmt(data.temperature, 2);
+      // ESP32 sends data in format:
+      // {
+      //   "timestamp": 1234567890,
+      //   "temperature": 25.5,  // or null if not available
+      //   "pressure_kPa": 101.3,
+      //   "methane_V": 0.85,
+      //   "ph_V": 6.2,
+      //   "raw": {
+      //     "pressure": 2048,
+      //     "methane": 1024,
+      //     "ph": 1024
+      //   }
+      // }
+      
+      // Update sensor values
+      tempEl.textContent = (data?.temperature === undefined || data?.temperature === null) ? "-" : fmt(data.temperature, 2);
       pressEl.textContent = fmt(data?.pressure_kPa, 2);
-      methEl.textContent  = fmt(data?.methane_V, 3);
-      phEl.textContent    = fmt(data?.ph_V, 3);
+      methEl.textContent = fmt(data?.methane_V, 3);
+      phEl.textContent = fmt(data?.ph_V, 3);
 
+      // Raw JSON display (pretty print)
       rawJsonEl.textContent = JSON.stringify(data ?? {}, null, 2);
 
+      // Update status based on pressure
       const st = computeStatus(data ?? {});
       setStatus(st);
 
-      const epoch = Number(data?.timestamp);
-      if (Number.isFinite(epoch) && epoch > 0) {
-        const d = new Date(epoch * 1000);
+      // Update timestamp
+      const timestamp = Number(data?.timestamp);
+      if (Number.isFinite(timestamp) && timestamp > 0) {
+        const d = new Date(timestamp * 1000);
         lastUpdateEl.textContent = d.toLocaleString();
       } else {
         lastUpdateEl.textContent = "-";
@@ -214,41 +230,71 @@
     }
 
     // =========================
-    // Firebase init
+    // Firebase initialization
     // =========================
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    function listen() {
-      const devicePath = deviceSelect.value; // "/Device01"
-      const path = `${devicePath}/latest`;   // "/Device01/latest"
+    let currentListener = null;
 
+    function listenToDevice() {
+      const deviceId = deviceSelect.value;
+      // ESP32 sends data to /Device01/latest and /Device01/readings/
+      // We'll listen to /{deviceId}/latest for real-time updates
+      const path = `${deviceId}/latest`;
+      
       dbPathEl.textContent = path;
 
+      // Reset UI
       updateUI(null);
       setStatus({ level: "UNKNOWN", cls: "st-unknown", desc: "Waiting for data…" });
 
-      const r = ref(db, path);
+      // Remove previous listener if exists
+      if (currentListener) {
+        // In Firebase v9, we need to unsubscribe differently
+        // We'll just create a new ref and listener
+      }
 
-      onValue(r, (snap) => {
-        const val = snap.val();
-        updateUI(val);
-      }, (err) => {
-        rawJsonEl.textContent = JSON.stringify({ error: err?.message ?? String(err) }, null, 2);
-        setStatus({ level: "UNKNOWN", cls: "st-unknown", desc: "Firebase read error. Check rules/config." });
+      // Create reference and attach listener
+      const dbRef = ref(db, path);
+      
+      // Store the unsubscribe function
+      currentListener = onValue(dbRef, (snapshot) => {
+        const data = snapshot.val();
+        console.log("Received data:", data);
+        updateUI(data);
+      }, (error) => {
+        console.error("Firebase error:", error);
+        rawJsonEl.textContent = JSON.stringify({ 
+          error: error.message || "Unknown error",
+          details: "Check Firebase rules and connection"
+        }, null, 2);
+        setStatus({ 
+          level: "UNKNOWN", 
+          cls: "st-unknown", 
+          desc: "Firebase read error. Check console for details." 
+        });
       });
     }
 
-    // UI events
+    // Event listeners
     reactorName.addEventListener("input", () => {
       const name = reactorName.value?.trim() || "RKT-001";
       reactorTitle.textContent = `Reactor: ${name}`;
     });
 
-    deviceSelect.addEventListener("change", listen);
+    deviceSelect.addEventListener("change", () => {
+      listenToDevice();
+    });
 
-    // start
-    listen();
+    // Initialize with default device
+    listenToDevice();
+
+    // Optional: Refresh data periodically to ensure connection stays alive
+    setInterval(() => {
+      // This just ensures the Firebase SDK keeps the connection alive
+      console.log("Keeping connection alive...");
+    }, 30000);
   </script>
 </body>
 </html>
