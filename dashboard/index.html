@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Innovillage — Reactor Dashboard</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">IV</div>
+      <div>
+        <div class="title">Innovillage Dashboard</div>
+        <div class="subtitle">Coffee Waste Management System — Reactor Monitoring</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="control">
+        <label for="deviceSelect">Device</label>
+        <select id="deviceSelect">
+          <option value="device01" selected>device01</option>
+          <option value="device02">device02</option>
+        </select>
+      </div>
+
+      <div class="control">
+        <label for="reactorName">Reactor Name</label>
+        <input id="reactorName" type="text" value="RKT-001" placeholder="e.g. RKT-001" />
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <div class="hero-left">
+        <h1 id="reactorTitle">Reactor: RKT-001</h1>
+        <p class="muted">
+          Realtime from Firebase RTDB:
+          <span class="mono" id="dbPath">/devices/device01/latest</span>
+        </p>
+      </div>
+
+      <div class="hero-right">
+        <div id="statusCard" class="status-card st-unknown">
+          <div class="status-top">
+            <span class="dot"></span>
+            <span class="status-label" id="statusLabel">UNKNOWN</span>
+          </div>
+          <div class="status-desc" id="statusDesc">Waiting for data…</div>
+          <div class="status-meta">
+            <span class="muted">Last update:</span>
+            <span class="mono" id="lastUpdate">-</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">Temperature</div>
+          <div class="badge">DS18B20</div>
+        </div>
+        <div class="card-value">
+          <span id="temp">-</span><span class="unit">°C</span>
+        </div>
+        <div class="card-foot muted">Ideal range depends on process stage.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">Pressure</div>
+          <div class="badge">MPX</div>
+        </div>
+        <div class="card-value">
+          <span id="press">-</span><span class="unit">kPa</span>
+        </div>
+        <div class="card-foot muted">Used for reactor safety status.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">Methane</div>
+          <div class="badge">MQ</div>
+        </div>
+        <div class="card-value">
+          <span id="meth">-</span><span class="unit">V</span>
+        </div>
+        <div class="card-foot muted">Raw voltage (calibration later).</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">pH</div>
+          <div class="badge">Probe</div>
+        </div>
+        <div class="card-value">
+          <span id="ph">-</span><span class="unit">V</span>
+        </div>
+        <div class="card-foot muted">Raw voltage (calibration later).</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Raw Payload</h2>
+        <div class="hint muted">Shows exactly what RTDB returns (for debugging)</div>
+      </div>
+
+      <pre id="rawJson" class="jsonbox">{}</pre>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span class="muted">Hosted on GitHub Pages • Realtime via Firebase RTDB</span>
+  </footer>
+
+  <!-- Firebase (v9 modular via CDN) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+    import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+    // =========================
+    // 1) GANTI firebaseConfig kamu di sini (WAJIB)
+    // Firebase Console -> Project settings -> Your apps -> Web app -> firebaseConfig
+    // =========================
+    const firebaseConfig = {
+      apiKey: "ISI_API_KEY",
+      authDomain: "innovillage-7fd90.firebaseapp.com",
+      databaseURL: "https://innovillage-7fd90-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "innovillage-7fd90",
+      storageBucket: "innovillage-7fd90.appspot.com",
+      messagingSenderId: "ISI_SENDER_ID",
+      appId: "ISI_APP_ID"
+    };
+
+    // =========================
+    // UI Elements
+    // =========================
+    const deviceSelect = document.getElementById("deviceSelect");
+    const reactorName = document.getElementById("reactorName");
+    const reactorTitle = document.getElementById("reactorTitle");
+    const dbPathEl = document.getElementById("dbPath");
+
+    const tempEl = document.getElementById("temp");
+    const pressEl = document.getElementById("press");
+    const methEl = document.getElementById("meth");
+    const phEl = document.getElementById("ph");
+    const rawJsonEl = document.getElementById("rawJson");
+
+    const statusCard = document.getElementById("statusCard");
+    const statusLabel = document.getElementById("statusLabel");
+    const statusDesc = document.getElementById("statusDesc");
+    const lastUpdateEl = document.getElementById("lastUpdate");
+
+    // =========================
+    // 2) Status rules (edit if needed)
+    // Default: pressure only
+    // SAFE <= 200
+    // WARNING 200..400
+    // DANGER > 400
+    // =========================
+    function computeStatus(data) {
+      const p = Number(data?.pressure);
+      if (Number.isNaN(p) || !Number.isFinite(p)) {
+        return { level: "UNKNOWN", cls: "st-unknown", desc: "Pressure invalid / no data yet." };
+      }
+      if (p > 400) return { level: "DANGER", cls: "st-danger", desc: "Pressure above danger threshold." };
+      if (p > 200) return { level: "WARNING", cls: "st-warning", desc: "Pressure above warning threshold." };
+      return { level: "SAFE", cls: "st-safe", desc: "System looks stable." };
+    }
+
+    function fmt(num, digits = 2) {
+      if (num === null || num === undefined) return "-";
+      const n = Number(num);
+      if (!Number.isFinite(n)) return "-";
+      return n.toFixed(digits);
+    }
+
+    function setStatus(st) {
+      statusCard.classList.remove("st-safe", "st-warning", "st-danger", "st-unknown");
+      statusCard.classList.add(st.cls);
+      statusLabel.textContent = st.level;
+      statusDesc.textContent = st.desc;
+    }
+
+    function updateUI(data) {
+      // render numbers
+      tempEl.textContent  = (data?.temperature === null || data?.temperature === undefined) ? "-" : fmt(data.temperature, 2);
+      pressEl.textContent = fmt(data?.pressure, 2);
+      methEl.textContent  = fmt(data?.methane, 3);
+      phEl.textContent    = fmt(data?.ph, 3);
+
+      // raw json
+      rawJsonEl.textContent = JSON.stringify(data ?? {}, null, 2);
+
+      // status
+      const st = computeStatus(data ?? {});
+      setStatus(st);
+
+      // last update
+      const epoch = Number(data?.epoch);
+      if (Number.isFinite(epoch) && epoch > 0) {
+        const d = new Date(epoch * 1000);
+        lastUpdateEl.textContent = d.toLocaleString();
+      } else {
+        lastUpdateEl.textContent = "-";
+      }
+    }
+
+    // =========================
+    // Firebase init
+    // =========================
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    let unsubscribe = null;
+
+    function listen() {
+      const deviceId = deviceSelect.value;
+      const path = `/devices/${deviceId}/latest`;
+
+      dbPathEl.textContent = path;
+
+      // reset
+      updateUI(null);
+      setStatus({ level: "UNKNOWN", cls: "st-unknown", desc: "Waiting for data…" });
+
+      // attach listener
+      const r = ref(db, path);
+      onValue(r, (snap) => {
+        const val = snap.val();
+        updateUI(val);
+      }, (err) => {
+        rawJsonEl.textContent = JSON.stringify({ error: err?.message ?? String(err) }, null, 2);
+        setStatus({ level: "UNKNOWN", cls: "st-unknown", desc: "Firebase read error. Check rules/config." });
+      });
+    }
+
+    // UI events
+    reactorName.addEventListener("input", () => {
+      const name = reactorName.value?.trim() || "RKT-001";
+      reactorTitle.textContent = `Reactor: ${name}`;
+    });
+
+    deviceSelect.addEventListener("change", () => {
+      listen();
+    });
+
+    // start
+    listen();
+  </script>
+</body>
+</html>
