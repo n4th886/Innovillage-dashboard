@@ -22,7 +22,7 @@
         <label for="deviceSelect">Device</label>
         <select id="deviceSelect">
           <option value="Device01" selected>Device01</option>
-          <option value="Device02">Device02</option>
+          <option value="Device02" disabled style="color: #999;">Device02 (Coming Soon)</option>
         </select>
       </div>
 
@@ -156,6 +156,11 @@
     const lastUpdateEl = document.getElementById("lastUpdate");
 
     // =========================
+    // Force Device01 only
+    // =========================
+    const ACTIVE_DEVICE = "Device01";
+
+    // =========================
     // Status rules based on pressure (kPa)
     // SAFE <= 200
     // WARNING 200-400
@@ -238,21 +243,20 @@
     let currentListener = null;
 
     function listenToDevice() {
-      const deviceId = deviceSelect.value;
-      // ESP32 sends data to /Device01/latest and /Device01/readings/
-      // We'll listen to /{deviceId}/latest for real-time updates
+      // Always use Device01 regardless of dropdown selection
+      const deviceId = ACTIVE_DEVICE;
       const path = `${deviceId}/latest`;
       
       dbPathEl.textContent = path;
 
       // Reset UI
       updateUI(null);
-      setStatus({ level: "UNKNOWN", cls: "st-unknown", desc: "Waiting for data…" });
+      setStatus({ level: "UNKNOWN", cls: "st-unknown", desc: "Waiting for data from Device01..." });
 
       // Remove previous listener if exists
       if (currentListener) {
-        // In Firebase v9, we need to unsubscribe differently
-        // We'll just create a new ref and listener
+        // Unsubscribe from previous listener
+        // In Firebase v9, we need to handle differently
       }
 
       // Create reference and attach listener
@@ -261,7 +265,7 @@
       // Store the unsubscribe function
       currentListener = onValue(dbRef, (snapshot) => {
         const data = snapshot.val();
-        console.log("Received data:", data);
+        console.log("Received data from Device01:", data);
         updateUI(data);
       }, (error) => {
         console.error("Firebase error:", error);
@@ -277,17 +281,21 @@
       });
     }
 
-    // Event listeners
+    // Event listeners - only reactor name can be changed
     reactorName.addEventListener("input", () => {
       const name = reactorName.value?.trim() || "RKT-001";
       reactorTitle.textContent = `Reactor: ${name}`;
     });
 
-    deviceSelect.addEventListener("change", () => {
-      listenToDevice();
+    // Disable device selection changes - only show Device01
+    deviceSelect.addEventListener("change", (e) => {
+      // Force back to Device01 if user somehow selects disabled option
+      if (deviceSelect.value !== ACTIVE_DEVICE) {
+        deviceSelect.value = ACTIVE_DEVICE;
+      }
     });
 
-    // Initialize with default device
+    // Initialize with Device01
     listenToDevice();
 
     // Optional: Refresh data periodically to ensure connection stays alive
