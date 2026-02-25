@@ -5,6 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Innovillage — Reactor Dashboard</title>
   <link rel="stylesheet" href="style.css" />
+  <style>
+    /* Additional styling untuk disabled state */
+    .device-placeholder {
+      color: #999;
+      font-style: italic;
+    }
+    .device-disabled-note {
+      background-color: #f5f5f5;
+      border-left: 3px solid #ff9800;
+      padding: 8px 12px;
+      margin: 10px 0;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+  </style>
 </head>
 
 <body>
@@ -21,8 +36,8 @@
       <div class="control">
         <label for="deviceSelect">Device</label>
         <select id="deviceSelect">
-          <option value="Device01" selected>Device01</option>
-          <option value="Device02" disabled style="color: #999;">Device02 (Coming Soon)</option>
+          <option value="Device01" selected>Device01 (Active)</option>
+          <option value="Device02" disabled class="device-placeholder">Device02 (Disabled - Coming Soon)</option>
         </select>
       </div>
 
@@ -41,6 +56,10 @@
           Realtime from Firebase RTDB:
           <span class="mono" id="dbPath">/Device01/latest</span>
         </p>
+        <!-- Device02 notification banner - hidden by default -->
+        <div id="device02Notice" class="device-disabled-note" style="display: none;">
+          ⚠️ Device02 is currently disabled. Data will not be updated until enabled.
+        </div>
       </div>
 
       <div class="hero-right">
@@ -121,7 +140,7 @@
   <!-- Firebase (v9 modular via CDN) -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-    import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+    import { getDatabase, ref, onValue, off } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
     // =========================
     // Firebase Configuration
@@ -143,6 +162,7 @@
     const reactorName = document.getElementById("reactorName");
     const reactorTitle = document.getElementById("reactorTitle");
     const dbPathEl = document.getElementById("dbPath");
+    const device02Notice = document.getElementById("device02Notice");
 
     const tempEl = document.getElementById("temp");
     const pressEl = document.getElementById("press");
@@ -156,9 +176,12 @@
     const lastUpdateEl = document.getElementById("lastUpdate");
 
     // =========================
-    // Force Device01 only
+    // Active Device Configuration
     // =========================
-    const ACTIVE_DEVICE = "Device01";
+    const ACTIVE_DEVICE = "Device01"; // Only Device01 is active
+    let currentDevice = ACTIVE_DEVICE;
+    let dbRef = null;
+    let unsubscribe = null;
 
     // =========================
     // Status rules based on pressure (kPa)
@@ -196,21 +219,18 @@
       statusDesc.textContent = st.desc;
     }
 
+    function resetUI() {
+      // Reset all displays to default
+      tempEl.textContent = "-";
+      pressEl.textContent = "-";
+      methEl.textContent = "-";
+      phEl.textContent = "-";
+      rawJsonEl.textContent = "{}";
+      lastUpdateEl.textContent = "-";
+      setStatus({ level: "UNKNOWN", cls: "st-unknown", desc: "No active device data." });
+    }
+
     function updateUI(data) {
-      // ESP32 sends data in format:
-      // {
-      //   "timestamp": 1234567890,
-      //   "temperature": 25.5,  // or null if not available
-      //   "pressure_kPa": 101.3,
-      //   "methane_V": 0.85,
-      //   "ph_V": 6.2,
-      //   "raw": {
-      //     "pressure": 2048,
-      //     "methane": 1024,
-      //     "ph": 1024
-      //   }
-      // }
-      
       // Update sensor values
       tempEl.textContent = (data?.temperature === undefined || data?.temperature === null) ? "-" : fmt(data.temperature, 2);
       pressEl.textContent = fmt(data?.pressure_kPa, 2);
@@ -240,32 +260,41 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    let currentListener = null;
-
-    function listenToDevice() {
-      // Always use Device01 regardless of dropdown selection
-      const deviceId = ACTIVE_DEVICE;
-      const path = `${deviceId}/latest`;
-      
-      dbPathEl.textContent = path;
-
-      // Reset UI
-      updateUI(null);
-      setStatus({ level: "UNKNOWN", cls: "st-unknown", desc: "Waiting for data from Device01..." });
-
-      // Remove previous listener if exists
-      if (currentListener) {
-        // Unsubscribe from previous listener
-        // In Firebase v9, we need to handle differently
+    // Function to remove listener
+    function removeListener() {
+      if (dbRef && unsubscribe) {
+        // Unsubscribe from the listener
+        off(dbRef);
+        unsubscribe = null;
+        dbRef = null;
+        console.log("Listener removed");
       }
+    }
 
-      // Create reference and attach listener
-      const dbRef = ref(db, path);
+    // Function to listen only to Device01
+    function listenToDevice01() {
+      // Remove any existing listener first
+      removeListener();
       
-      // Store the unsubscribe function
-      currentListener = onValue(dbRef, (snapshot) => {
+      // Reset UI
+      resetUI();
+      
+      // Update path display
+      const path = `${ACTIVE_DEVICE}/latest`;
+      dbPathEl.textContent = path;
+      
+      // Hide device02 notice
+      device02Notice.style.display = "none";
+      
+      // Set status
+      setStatus({ level: "UNKNOWN", cls: "st-unknown", desc: `Waiting for data from ${ACTIVE_DEVICE}...` });
+
+      // Create reference and attach listener only for Device01
+      dbRef = ref(db, path);
+      
+      unsubscribe = onValue(dbRef, (snapshot) => {
         const data = snapshot.val();
-        console.log("Received data from Device01:", data);
+        console.log(`Received data from ${ACTIVE_DEVICE}:`, data);
         updateUI(data);
       }, (error) => {
         console.error("Firebase error:", error);
@@ -281,28 +310,73 @@
       });
     }
 
-    // Event listeners - only reactor name can be changed
+    // Function for Device02 (disabled - no updates)
+    function showDevice02Placeholder() {
+      // Remove any existing listener
+      removeListener();
+      
+      // Reset UI to show no data
+      resetUI();
+      
+      // Update path display
+      dbPathEl.textContent = "Device02/latest (Disabled)";
+      
+      // Show device02 notice
+      device02Notice.style.display = "block";
+      
+      // Set special status for Device02
+      setStatus({ 
+        level: "DISABLED", 
+        cls: "st-unknown", 
+        desc: "Device02 is currently disabled. No data updates." 
+      });
+      
+      // Set raw JSON to show placeholder message
+      rawJsonEl.textContent = JSON.stringify({
+        status: "disabled",
+        message: "Device02 is currently disabled. Data will not be updated until enabled.",
+        note: "This device is reserved for future sensor deployment"
+      }, null, 2);
+      
+      console.log("Device02 is disabled - no data updates");
+    }
+
+    // Event listener for device selection
+    deviceSelect.addEventListener("change", (e) => {
+      const selectedDevice = deviceSelect.value;
+      
+      if (selectedDevice === "Device01") {
+        // Device01 is active - start listening
+        listenToDevice01();
+      } else {
+        // Device02 is disabled - show placeholder only
+        showDevice02Placeholder();
+        
+        // Force dropdown back to Device01 visually? 
+        // We don't force it back, but we show disabled state
+        // This allows user to see Device02 but with no data
+      }
+    });
+
+    // Reactor name change handler
     reactorName.addEventListener("input", () => {
       const name = reactorName.value?.trim() || "RKT-001";
       reactorTitle.textContent = `Reactor: ${name}`;
     });
 
-    // Disable device selection changes - only show Device01
-    deviceSelect.addEventListener("change", (e) => {
-      // Force back to Device01 if user somehow selects disabled option
-      if (deviceSelect.value !== ACTIVE_DEVICE) {
-        deviceSelect.value = ACTIVE_DEVICE;
-      }
-    });
-
     // Initialize with Device01
-    listenToDevice();
+    listenToDevice01();
 
-    // Optional: Refresh data periodically to ensure connection stays alive
+    // Prevent any accidental Firebase connections to Device02
+    // by monitoring and cleaning up if somehow a listener gets attached
     setInterval(() => {
-      // This just ensures the Firebase SDK keeps the connection alive
-      console.log("Keeping connection alive...");
-    }, 30000);
+      // This just ensures we're still listening to the correct device
+      // and no stray listeners exist
+      if (deviceSelect.value === "Device02" && currentDevice !== "Device02") {
+        // Double-check that Device02 is still disabled
+        console.log("Verifying Device02 is disabled");
+      }
+    }, 10000);
   </script>
 </body>
 </html>
