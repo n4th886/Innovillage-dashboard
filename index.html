@@ -6,14 +6,21 @@
   <title>Innovillage — Reactor Dashboard</title>
   <link rel="stylesheet" href="style.css" />
   <style>
-    /* Additional styling untuk disabled state */
-    .device-placeholder {
-      color: #999;
-      font-style: italic;
+    /* Additional styling */
+    .device-active {
+      font-weight: normal;
     }
     .device-disabled-note {
       background-color: #f5f5f5;
       border-left: 3px solid #ff9800;
+      padding: 8px 12px;
+      margin: 10px 0;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+    .device-info {
+      background-color: #e8f0fe;
+      border-left: 3px solid #2196F3;
       padding: 8px 12px;
       margin: 10px 0;
       border-radius: 4px;
@@ -36,8 +43,8 @@
       <div class="control">
         <label for="deviceSelect">Device</label>
         <select id="deviceSelect">
-          <option value="Device01" selected>Device01 (Active)</option>
-          <option value="Device02" disabled class="device-placeholder">Device02 (Disabled - Coming Soon)</option>
+          <option value="Device01" selected>Device01 (Reactor A)</option>
+          <option value="Device02">Device02 (Reactor B) - Active</option>
         </select>
       </div>
 
@@ -56,9 +63,9 @@
           Realtime from Firebase RTDB:
           <span class="mono" id="dbPath">/Device01/latest</span>
         </p>
-        <!-- Device02 notification banner - hidden by default -->
-        <div id="device02Notice" class="device-disabled-note" style="display: none;">
-          ⚠️ Device02 is currently disabled. Data will not be updated until enabled.
+        <!-- Device info banner - dynamic based on selection -->
+        <div id="deviceInfo" class="device-info" style="display: none;">
+          <span id="deviceInfoMessage"></span>
         </div>
       </div>
 
@@ -162,7 +169,8 @@
     const reactorName = document.getElementById("reactorName");
     const reactorTitle = document.getElementById("reactorTitle");
     const dbPathEl = document.getElementById("dbPath");
-    const device02Notice = document.getElementById("device02Notice");
+    const deviceInfo = document.getElementById("deviceInfo");
+    const deviceInfoMessage = document.getElementById("deviceInfoMessage");
 
     const tempEl = document.getElementById("temp");
     const pressEl = document.getElementById("press");
@@ -176,10 +184,8 @@
     const lastUpdateEl = document.getElementById("lastUpdate");
 
     // =========================
-    // Active Device Configuration
+    // Firebase references
     // =========================
-    const ACTIVE_DEVICE = "Device01"; // Only Device01 is active
-    let currentDevice = ACTIVE_DEVICE;
     let dbRef = null;
     let unsubscribe = null;
 
@@ -190,7 +196,6 @@
     // DANGER > 400
     // =========================
     function computeStatus(data) {
-      // Check if data exists and has pressure_kPa field
       if (!data || data.pressure_kPa === undefined || data.pressure_kPa === null) {
         return { level: "UNKNOWN", cls: "st-unknown", desc: "No pressure data available." };
       }
@@ -220,27 +225,25 @@
     }
 
     function resetUI() {
-      // Reset all displays to default
       tempEl.textContent = "-";
       pressEl.textContent = "-";
       methEl.textContent = "-";
       phEl.textContent = "-";
       rawJsonEl.textContent = "{}";
       lastUpdateEl.textContent = "-";
-      setStatus({ level: "UNKNOWN", cls: "st-unknown", desc: "No active device data." });
     }
 
     function updateUI(data) {
-      // Update sensor values
+      // Update sensor values - menyesuaikan dengan format dari ESP32
       tempEl.textContent = (data?.temperature === undefined || data?.temperature === null) ? "-" : fmt(data.temperature, 2);
       pressEl.textContent = fmt(data?.pressure_kPa, 2);
       methEl.textContent = fmt(data?.methane_V, 3);
       phEl.textContent = fmt(data?.ph_V, 3);
 
-      // Raw JSON display (pretty print)
+      // Raw JSON display
       rawJsonEl.textContent = JSON.stringify(data ?? {}, null, 2);
 
-      // Update status based on pressure
+      // Update status
       const st = computeStatus(data ?? {});
       setStatus(st);
 
@@ -263,7 +266,6 @@
     // Function to remove listener
     function removeListener() {
       if (dbRef && unsubscribe) {
-        // Unsubscribe from the listener
         off(dbRef);
         unsubscribe = null;
         dbRef = null;
@@ -271,31 +273,52 @@
       }
     }
 
-    // Function to listen only to Device01
-    function listenToDevice01() {
-      // Remove any existing listener first
+    // Function to listen to selected device
+    function listenToDevice(deviceId) {
+      // Remove any existing listener
       removeListener();
       
       // Reset UI
       resetUI();
       
       // Update path display
-      const path = `${ACTIVE_DEVICE}/latest`;
+      const path = `${deviceId}/latest`;
       dbPathEl.textContent = path;
       
-      // Hide device02 notice
-      device02Notice.style.display = "none";
+      // Show device info
+      deviceInfo.style.display = "block";
+      if (deviceId === "Device01") {
+        deviceInfoMessage.textContent = "📊 Menampilkan data dari Device01 (Reactor A)";
+      } else {
+        deviceInfoMessage.textContent = "📊 Menampilkan data dari Device02 (Reactor B)";
+      }
       
       // Set status
-      setStatus({ level: "UNKNOWN", cls: "st-unknown", desc: `Waiting for data from ${ACTIVE_DEVICE}...` });
+      setStatus({ level: "UNKNOWN", cls: "st-unknown", desc: `Waiting for data from ${deviceId}...` });
 
-      // Create reference and attach listener only for Device01
+      // Create reference and attach listener
       dbRef = ref(db, path);
       
       unsubscribe = onValue(dbRef, (snapshot) => {
         const data = snapshot.val();
-        console.log(`Received data from ${ACTIVE_DEVICE}:`, data);
-        updateUI(data);
+        console.log(`Received data from ${deviceId}:`, data);
+        
+        if (data) {
+          updateUI(data);
+        } else {
+          // Data exists but is null/empty
+          resetUI();
+          setStatus({ 
+            level: "NO DATA", 
+            cls: "st-unknown", 
+            desc: `${deviceId} has not sent any data yet.` 
+          });
+          rawJsonEl.textContent = JSON.stringify({ 
+            status: "no_data",
+            message: `${deviceId} exists but no data available`,
+            timestamp: new Date().toISOString()
+          }, null, 2);
+        }
       }, (error) => {
         console.error("Firebase error:", error);
         rawJsonEl.textContent = JSON.stringify({ 
@@ -303,59 +326,17 @@
           details: "Check Firebase rules and connection"
         }, null, 2);
         setStatus({ 
-          level: "UNKNOWN", 
+          level: "ERROR", 
           cls: "st-unknown", 
-          desc: "Firebase read error. Check console for details." 
+          desc: "Firebase read error. Check console." 
         });
       });
-    }
-
-    // Function for Device02 (disabled - no updates)
-    function showDevice02Placeholder() {
-      // Remove any existing listener
-      removeListener();
-      
-      // Reset UI to show no data
-      resetUI();
-      
-      // Update path display
-      dbPathEl.textContent = "Device02/latest (Disabled)";
-      
-      // Show device02 notice
-      device02Notice.style.display = "block";
-      
-      // Set special status for Device02
-      setStatus({ 
-        level: "DISABLED", 
-        cls: "st-unknown", 
-        desc: "Device02 is currently disabled. No data updates." 
-      });
-      
-      // Set raw JSON to show placeholder message
-      rawJsonEl.textContent = JSON.stringify({
-        status: "disabled",
-        message: "Device02 is currently disabled. Data will not be updated until enabled.",
-        note: "This device is reserved for future sensor deployment"
-      }, null, 2);
-      
-      console.log("Device02 is disabled - no data updates");
     }
 
     // Event listener for device selection
     deviceSelect.addEventListener("change", (e) => {
       const selectedDevice = deviceSelect.value;
-      
-      if (selectedDevice === "Device01") {
-        // Device01 is active - start listening
-        listenToDevice01();
-      } else {
-        // Device02 is disabled - show placeholder only
-        showDevice02Placeholder();
-        
-        // Force dropdown back to Device01 visually? 
-        // We don't force it back, but we show disabled state
-        // This allows user to see Device02 but with no data
-      }
+      listenToDevice(selectedDevice);
     });
 
     // Reactor name change handler
@@ -365,18 +346,7 @@
     });
 
     // Initialize with Device01
-    listenToDevice01();
-
-    // Prevent any accidental Firebase connections to Device02
-    // by monitoring and cleaning up if somehow a listener gets attached
-    setInterval(() => {
-      // This just ensures we're still listening to the correct device
-      // and no stray listeners exist
-      if (deviceSelect.value === "Device02" && currentDevice !== "Device02") {
-        // Double-check that Device02 is still disabled
-        console.log("Verifying Device02 is disabled");
-      }
-    }, 10000);
+    listenToDevice("Device01");
   </script>
 </body>
 </html>
